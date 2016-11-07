@@ -1,0 +1,5 @@
+requested by Cami Collins 8-2016
+
+FAST-ION DEUTERIUM-ALPHA (FIDA) DIAGNOSTIC
+
+FIDA diagnostic calibration routines, analysis codes, and results

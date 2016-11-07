@@ -1,0 +1,13 @@
+; This file contains the patch panel used for a given
+; shot or shot range.
+; The patch panel number is a map to the major radius
+; of the measurement and the intensity calibration
+; file to use.
+;
+; Notes:
+;
+; shot_start shot_end nradii radius1, radius2, ...
+;------------------------------------------------
+144018 148701 6 2.07 2.12 2.17 2.22 1.96 2.02
+148702 999999 6 2.066 2.116 2.169 2.221 1.957 2.013
+; LAST LINE

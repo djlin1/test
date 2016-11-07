@@ -1,0 +1,515 @@
+;**************************************************************************
+;
+;  4dlib/FITTING/spl_mod.pro
+;
+;  created:
+;
+;  modified:
+;
+;  20110718 tbt Took out two 'spl_mod:' print statements.
+;  20081118 tbt From a Tim Luce email
+;      I believe the number of Monte Carlo iterations is
+;      user-specified, 
+;but the default is much less than 200 (probably 20).
+;The idea was to give the appropriate uncertainties on the 
+;derivatives and scale lengths in addition to the fit itself.
+;What gets saved and displayed is population standard deviation 
+;based on the Monte Carlo variation in the input data
+;with Gaussian distribution based on the reported uncertainties.  
+;There is no check that the resulting variations are
+;Gaussian (unlikely) or that the mean matches the original fitted 
+;profile (also unlikely), but the analysis presumes this.  It
+;would be painful to save all of the profiles, but this may have 
+;been done at some point.  Ted should be able to point you
+;to the algorithm that does this.  He could also help make a 
+;private version of gaprofiles that stores the Monte Carlo
+;process results.  At one point, the profiles were displayed as 
+;the statistics accumulated, but I don't think they are saved.
+;                Tim
+
+;  20130202 BAG Copied to local user's copy to remove constraint on y'(0).
+;  20071115 tbt E_temp was aborting because in Edge Fit Auto mode, sometimes
+;               the dimension of the fit was being returned as 101 (instead of
+;               121). This caused an indexing problem fit_error(j,*) = fmc.yfit.
+;               Checked for that condition and skipped it without incrementing j.
+;  20050125 TCL Removed some code that was restricting the extent of the
+;               interferometer data that was fit.  The new calls in 
+;               MAKELINE should take care of the restriction properly.
+;  20040324 tbt Density was calling spl_mod with model.normalization =
+;               'yes              'causing errors. Fixed in density_ev_event.
+;  20040302 tbt Looked for troidal_rotation edge fit problem 
+;               (see toroidal_rotation_new.pro)
+;    2/25/04    TBT - Added neg keyword to allow neagtive values.
+;                     This eliminates the need for spl_mod_neg in
+;                     toroidal_rotation_new
+;    2/11/04    TCL - Changed the algorithm of the edge fit to be more
+;                     robust.  The old algorithm had cases which returned
+;                     Inf, which the fitter didn't like.
+;      20031210 tbt - design matrix changed as per Tim Luce for solving
+;                     lu=gee
+;    9/05/00    tbt - Put back in Linear Interpolation for Greg Schmidt.
+;                     Tim Luce does not think this feature should be allowed.
+;    5/00/00    tbt - Luce and Zeng changes.
+;    4/28/99    tbt - set norm_data to 1. if undefined.
+;    3/04/99    tbt - Readded linear features for Greg Schmidt.
+;    3/01/99    tbt Added outint as a returned argument for use in density::fit_dens
+;    2/23/99    TCL Fixed edge model to have positive definite scrapelength.
+;                   Fixed the edge model derivatives to be the simple
+;                   analytic forms.  Fixed a bug where the code did not 
+;                   handle the case with m.edge = 'fit' and 
+;                   m.boundary = 'fix' properly.
+;   12/04/98    tbt - add p and pp for edge points. (see yfitoutpp)
+;    6/03/98    tbt Recovered file
+;    6/02/98    tbt - add line for type
+;    6/01/98    tbt - prints for xray
+;    5/26/98    tbt - added prints on error.
+;    5/21/98    TBT - check for interpolation type - spline or linear
+;   12/21/97    TBT - was getting unresolved variable amoeba_4d!! Went away
+;   12/04/97    TBT - changed amoeba to amoeba_4d so no conflict with IDL 5.
+;    9/27/96    Ted Terpstra - Burrell going into infinite run
+;                   state with 77713 - impdens because ndata = nparams.
+;		    Trying redchisq = chisq for this case as a fix.
+;    8-9-96     K. Greene -- Add use of function TEMPORARY
+;    6/05/96  	tbt  Error found: when m.edge="fit", xfit goes from
+;               0.0 to 1.19 with 1.0 repeated.
+;    5/09/96  	tbt  Took out ydatafit - not used
+;    5/01/96  	TCL  Removed reference to edge slope matching
+;    4/01/96  	TBT  Added Luce change for ldata(i).nout =
+;    1/21/96  	TBT  Changed call to design_matrix_dens
+;    1/18/96  	TBT  Added yout_norm to common data_outcom
+;               Added norm_data to arg list
+;    1/17/96  	TBT  Created from spl_mod.pro
+;   
+;
+;
+;*************************************************************************
+
+function bag_spl_mod, rho_data, data, sigma_data, $ ;data to fit
+                  norm_data,                  $
+                  in_time_block,              $ ;pointer arr for which 
+                                                ;time block data(i) is in
+ 	          linedata = linedata,        $ ;line integral data structure
+ 	          outint   = outint,          $	;returned array 
+                                                ;(-99. is nonused)
+                  model = model,              $
+                  crefl = crefl,              $
+                  erefl = erefl,              $
+                  neg   = neg                   ; If on, allow negative values
+MESSAGE,'Grierson SPL_MOD',/CONT
+;
+; linedata should have the following defined fields
+;     (linedata is an array, dimensioned by the number of channels)
+; .data        line integral of data
+; .data_err    statistical uncertainty of data
+; .name        name of data
+; .rho         array of rho points spaced by .dl
+; .nrho        number of rho points per chord
+; .dl          step size
+;
+;  model.type can be 'point', 'line', or 'mixed'.
+;       See below for default model if not specified.
+
+@codes/spl_mod_common
+@codes/fit_common
+
+
+;Message, /Continue, 'Starting -------------------------------'
+;Print, 'minmax x =', min(rho_data), max(rho_data)
+;Print, 'minmax x =', min(data), max(data)
+;Print
+;help, reflcom, corerefldata, edgerefldata
+;help, ldatacom, ldata
+;help, fitcom,bc,knotval,ydatafit
+;help, data_tofitcom,xdata,ydata,ydata_err, ydata_norm, ydata_in_time_block
+;help, data_outcom,  xout, yout, yout_err,  yout_norm,   yout_in_time_block
+;help, modelcom, m
+;help, pointcom, pp
+;help, normtimes, norm_ntimes, norm_data     ; # of times for normalzation
+;
+;If N_Elements(bc) Gt 0 Then Print, 'Starting BC = ', bc
+
+
+if (n_elements(norm_data) eq 0) then begin
+  norm_ntimes   = 1
+  in_time_block = fltarr(n_elements(data))
+  norm_data = 1.   ; tbt 4/99
+endif else begin
+  norm_ntimes = n_elements(norm_data)
+  ydata_norm  = norm_data
+endelse
+
+;Print, 'norm_data = ', norm_data
+
+If keyword_set(neg) Then Begin
+   allow_negatives = 1
+Endif Else Begin
+   allow_negatives = 0
+EndElse
+
+pp = { nfree: long(-1), y1: long(-1), yp1: long(-1), norm: long(-1)}
+
+if n_elements(model) le 0 then $
+  model = {axis: 'free',boundary: 'free',edgeslope: 'free',edge: 'ignore',$
+	normalize: 1.0, ftol: 1.e-2, autoknot: 'yes',numknot: long(5),$
+	knotloc: [0.,.25,.5,.75,1.0],type: 'point', $
+        maxit: 200 }
+
+if keyword_set(linedata) then begin
+  ldata = linedata 
+;  if model.type eq 'mixed' then begin  ; else model.type = 'line'
+;    rhomaxl = max(rho_data)
+;    for i = 0,n_elements(ldata) -1  do begin
+;      nout = where(ldata(i).rho gt rhomaxl,num)
+;      if num gt 0 then ldata(i).nout = max([ldata(i).nout-num,1])  ; Luce 4/1/96 
+;    endfor
+;  endif
+endif else model.type = 'point'
+
+if keyword_set(crefl) then corerefldata=crefl else corerefldata = 0.
+
+if keyword_set(erefl) then edgerefldata=erefl else edgerefldata = 0.
+
+norm = 1.0
+bc = fltarr(4) - 1.e30
+
+;
+; the model structure fields should follow the following rules,
+;
+; .axis: 'free' or string(value)   -----   
+;		constraint on value at rho = 0
+;
+
+if string(model.axis) ne 'free' then $
+		bc(0) = float(model.axis) else bc(0) = -1.e30
+bc(1) = 0          					;slope at origin 
+;; 20130202 BAG
+  wh_axisslope = WHERE(STRCMP(TAG_NAMES(model),'axisslope',/FOLD_CASE),nwh_axisslope)
+  IF nwh_axisslope EQ 1 THEN BEGIN
+      IF STRCMP(model.(wh_axisslope),'free',/FOLD_CASE) THEN bc(1) = -1e30 $
+      ELSE bc(1) = FLOAT(model.(wh_axisslope))
+  ENDIF
+        
+
+;
+; .boundary: 'free' or string(value)   -----   
+;		constraint on value at rho = 1
+;
+
+if string(model.boundary) ne 'free' then $
+		bc(2) = float(model.boundary) else bc(2) = -1.e30
+
+;
+; .edgelope: 'free', or string(value)   -----   
+;		constraint on derivative at rho = 1
+;
+
+if (string(model.edgeslope) ne 'free') then $
+		bc(3) = float(model.edgeslope) else bc(3) = -1.e30
+
+
+;Print
+;Message, /Continue, 'model structure inside spl_mod ='
+;Help, /str, model
+;Print 
+
+m = model
+
+if m.type eq 'point' or m.type eq 'mixed' then begin
+
+
+  If allow_negatives Then Begin
+    iin = where(rho_data ge 0. and rho_data lt 1.0                    $
+	  	                   ,num)
+  Endif Else Begin
+    iin = where(rho_data ge 0. and rho_data lt 1.0 and data gt 0. and $
+	  	  sigma_data gt 0.0,num)
+  EndElse
+
+
+  if num le 0 then Begin
+     Print, 'Spl_mod: No Data. num = 0, set ierr=1. ', num
+     return,{ierr: 1}
+  EndIf
+
+  xdata               = rho_data(iin)
+  ydata               = data(iin)
+  ydata_in_time_block = in_time_block(iin)
+  ydata_err           = sigma_data(iin)
+
+  i = sort(xdata)       ;data must be monotonic for the spline to work
+  xdata               = temporary(xdata(i))
+  ydata               = temporary(ydata(i))
+  ydata_in_time_block = temporary(ydata_in_time_block(i))
+  ydata_err           = temporary(ydata_err(i))
+
+
+  If allow_negatives Then Begin
+    iout = where(rho_data ge 1.                                     ,num)
+    iout_path = 'rho_data'
+  Endif Else Begin
+    iout = where(rho_data ge 1. and data gt 0. and sigma_data gt 0.0,num)
+    iout_path = 'rho_data AND +++'
+  EndElse
+
+
+  if num gt 0 then begin
+    xout               = rho_data(iout)
+    yout               = data(iout)
+    yout_in_time_block = in_time_block(iout)
+    yout_err           = sigma_data(iout)
+
+    i = sort(xout)   ;data must be monotonic for the spline to work
+    xout               = temporary(xout(i))
+    yout               = temporary(yout(i))
+    yout_in_time_block = temporary(yout_in_time_block(i))
+    yout_err           = temporary(yout_err(i))
+  endif else Begin
+;   20071114 tbt
+;    Message, /Continue, 'Setting m.edge = "ignore"     iout_path = ' + iout_path  
+    m.edge = 'ignore'
+  EndElse
+endif
+
+
+if m.autoknot eq 'no' then begin
+  iedge = where(m.knotloc eq 1.0,num)
+  if num gt 0 then numknot = iedge(0) + 1 else Begin
+     Print, 'Spl_mod: Returning at autoknot. results.ierr = ', ierr
+     return,{ierr: 1}
+  EndElse
+  nfree = 0
+  knotloc = m.knotloc(0:numknot - 1)
+  m.numknot = numknot
+endif else begin
+  numknot =  m.numknot
+  nfree = numknot - 2
+  ;
+  ; initial guess for knot positions
+  ;
+  knotloc= findgen(numknot ) / (numknot - 1)	
+  pguess = rhosig(knotloc,numknot)
+endelse  
+
+pp.nfree = nfree
+
+if m.edge eq 'fit' then begin
+  if m.boundary eq 'free' then begin  
+    nedge = 2 
+    ;
+    ; edge model will fit boundary value and slope as
+    ; free paramters in the non-linear fit
+    ;
+    if m.autoknot eq 'no' then begin
+      pguess = [0.1,alog(1.)]
+      pp.y1  = 0
+      pp.yp1 = 1
+    endif
+    if m.autoknot eq 'yes' then begin
+      ;
+      ; initial guess for scrape off layer width
+      ;
+      pguess = [temporary(pguess),0.1,alog(0.1)]
+      pp.y1  = n_elements(pguess) - 2
+      pp.yp1 = n_elements(pguess) - 1
+    endif
+  endif else begin
+    nedge = 1 
+    if m.autoknot eq 'no' then begin
+      pguess = [alog(0.1)]
+      pp.yp1 = 0
+    endif
+    if m.autoknot eq 'yes' then begin
+      pguess = [temporary(pguess),alog(0.1)]
+      pp.yp1 = n_elements(pguess) - 1
+    endif
+  endelse
+endif else nedge = 0   ;
+;;--- zeng changed 20100301
+;if m.type eq 'point' and string(m.normalize) eq 'yes' then m.normalize = 'no'
+;;----
+if string(m.normalize) eq 'yes' then begin 
+  if n_elements(pguess) le 0 then begin
+    pguess = fltarr(norm_ntimes) + 1.
+    pp.norm = 0
+  endif else begin
+    pp.norm = n_elements(pguess)
+    pguess = [temporary(pguess), fltarr(norm_ntimes) + 1.]
+  endelse
+endif
+
+ 
+nparams = (numknot +  n_elements(pguess))  ;- numconstraints
+ndata   = n_elements(ydata)
+
+if m.edge eq 'fit'   then ndata = ndata + n_elements(yout)
+if m.type eq 'mixed' then ndata = ndata + n_elements(ldata)
+if m.type eq 'line' then ndata = n_elements(ldata)
+if (n_elements(crefl) ne 0) then ndata = ndata + n_elements(crefl.rfldn)-1
+if (n_elements(erefl) ne 0) then ndata = ndata + n_elements(erefl.rfldn)-1
+
+if (m.autoknot eq 'no' and m.edge eq 'ignore' and $
+    string(m.normalize) ne 'yes') then begin
+  pguess = rhosig(knotloc,numknot) 
+  chisq=linearfit(pguess) 
+  iter = 0
+endif  else begin
+;  Message, /Continue, 'Print out amoeba variables'
+;  Print, 'pguess     = ', pguess
+
+  psolution =  amoeba_4d(pguess,   'linearfit',m.ftol,iter, ierr, m.maxit)
+  ftol=0.5*m.ftol
+
+;  print,'Spl_mod: half'
+
+  psolution =  amoeba_4d(psolution,'linearfit',  ftol,iter, ierr, m.maxit)
+
+  if m.autoknot eq 'yes' then $
+    knotloc = sigrho(psolution(0:nfree - 1),numknot-2)
+  chisq=linearfit(psolution, outint=outint)
+endelse
+
+
+If (ndata Gt nparams) Then Begin
+   redchisq = chisq / (ndata - nparams)
+EndIf Else Begin
+   Print, 'Spl_mod: Error - Beware!!  ndata (', ndata,    $
+          ') Le nparams (', nparams, ') - define redchisq = chisq'
+   redchisq = chisq
+EndElse
+
+xfit     = findgen(101)/100 
+
+derv=' '
+
+d = design_matrix( xfit, knotloc, geeinvc, fx, b, bcs=bc, der=derv )
+
+
+;; 20031210 tbt - design matrix changed as per Tim Luce.
+;; yfit  = d#knotval+b#geeinvc
+   yfit  = (d # knotval) + (b # geeinvc)
+
+yfitp = derv.d1#knotval
+yfitpp= derv.d2#knotval
+
+;Message, /Continue, 'm.edge     = ' + string(m.edge) 
+;Message, /Continue, 'model.edge = ' + string(model.edge)
+
+if string(m.edge) eq 'fit' then  begin
+; xoutfit = 1.00 + findgen(20)/100.     ; tbt
+
+  num_edge = 20                 ; number of points in the edge fit.
+  num_fit  = N_Elements(yfit)   ; Number of points in the inner fit.
+
+  xoutfit = 1.01 + findgen(num_edge)/100.
+
+  scrapelength = exp(psolution(pp.yp1))
+  youtfit = bc(2) * exp( ( 1. - xoutfit ) / scrapelength )
+
+
+
+;  Message, /Continue, 'Calulation youtfit'
+;  Help,  bc[2], scrapelength
+;  Help, /str, pp
+;  Print, 'psolution =', psolution
+;  Help, psolution
+;  Print, 'Min/Max youtfit =', Min(youtfit), Max(youtfit)
+;  Print, 'Min/Max xoutfit =', Min(xoutfit), Max(xoutfit)
+
+  xfit = [xfit,xoutfit]
+  yfit = [yfit,youtfit]
+
+
+; Below - add 1st and second derivatives for edge points.
+; Below - temp fit tbt 12/98 --------------------------------------------------
+  youtfitp = -1. * youtfit / scrapelength
+  yfitp  = [yfitp,  youtfitp]
+
+  youtfitpp = youtfit / scrapelength^2.
+  yfitpp = [yfitpp, youtfitpp]
+
+; Above - temp fit tbt 12/98 --------------------------------------------------
+
+
+endif  else scrapelength = 0.0
+
+;           normout is an array of normalization values for each time.
+;  strtrim gets rid of all blanks in densityev_event. 20040324 tbt
+if m.normalize eq 'yes' then Begin
+            normout = psolution(pp.norm:pp.norm+norm_ntimes-1)   
+;            print,'Spl_mod:normout=',normout
+EndIf else if string(m.normalize) eq  'no' then Begin
+            normout = fltarr(norm_ntimes) + 1. 
+EndIf else Begin
+            normout = norm_data         
+EndElse
+
+
+;;
+; Note: result.xfit and yfit are either 101 or 121 in length depending on if
+;                            edgefit is off or on.
+;       If definition of result changes, change redefinition in Restore_dens.
+;
+;
+;--------------------------------------------
+;
+; NOTE: Greg Schmidt and Daryl Ernst of Princeton Plasma Physics Laboratory
+;       have requested this linear interpolation option.
+;       Tim Luce says that it is meaningless but agreed to allow this feature.
+;       tbt - September 5, 2000
+
+If N_Elements(model_interp) Lt 1 Then Begin
+  Print, 'Spl_mod: ERROR - model_interp undefined -set to spline'
+  model_interp = 'spline'
+EndIf
+
+
+If model_interp Eq 'linear' Then Begin
+  PRINT
+  Message, /Continue, 'Spl_mod: model_interp = ' +  model_interp
+  Print, 'Spl_mod: WARNING: Using linear interpolation is NOT ', $
+                            'recommended by Tim Luce.'
+  Print, 'Spl_mod: Using linear interpolation (linmod) for data', Max(data)
+
+
+; Interpolate xdata and ydata onto xfit - giving yfit.
+
+  lin_mod, xdata, ydata, xfit, yfit
+
+;  yfit = Interpol( ydata, xdata, xfit)
+
+; Do NOT interpolate outside data - set to end points.
+;
+;  ix = Where( xfit Lt xdata(0), nix)
+;  If nix Gt 0 Then yfit(ix) = ydata(0)
+;
+;  nx = N_elements(xdata)-1
+;
+;  ix = Where( xfit Gt xdata(nx), nix)
+;  If nix Gt 0 Then yfit(ix) = ydata(nx)
+;
+;
+;  Help, xdata
+;  Help, yfit
+;  Print, 'Spl_mod: linear xdata min & max = ', Min(xdata), Max(xdata)
+;  Print, 'Spl_mod: linear ydata min & max = ', Min(ydata), Max(ydata)
+;  Print, 'Spl_mod: linear xfit  min & max = ', Min(xfit),  Max(xfit)
+;  Print, 'Spl_mod: linear yfit  min & max = ', Min(yfit),  Max(yfit)
+ 
+EndIf
+
+;
+;----------------------------------------------------------------------
+;Print
+;Message, /Continue, 'model structure inside spl_mod ='
+;Help, /str, m
+;Print 
+
+results = {   xfit: xfit, yfit: yfit, yfitp: yfitp, yfitpp: yfitpp, $
+           knotloc: knotloc, knotval: knotval, $
+             chisq: chisq, redchisq: redchisq, iter: iter, bc : bc,ierr: 0,$
+      scrapelength: scrapelength,norm: normout}
+
+
+return,results
+end     ; spl_mod
+

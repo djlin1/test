@@ -1,0 +1,417 @@
+;;from /u/grierson/idlpros/fida
+;; Get the FIDA data from the standard CER system
+;; The error on the spectrum, or counts recorded by each pixel, is the
+;; square root of the number of counts.  The error in each pixel when
+;; doing timeslice subtraction is then the propogation of errors in
+;; quadrature, i.e. sqrt(sigOn^2 + sigOff^2) where sigOn is
+;; SQRT(counts) in the on slice, and sigOn is SQRT(counts) in the off
+;; slice.
+;; We really need to go to photoelectron to digitizer counts and do
+;; the error in photoelectrons to do this properly.
+;;  
+FUNCTION GET_CER_DATA,shot,BEAM=beam,USER=user,FIDUCIAL=fiducial_user,$
+                               FID_GUESS_RANGE=guess_range,BALANCE=balance
+  result={ierr:1}
+
+  COMMON CERVIEW_COMMON
+
+  ;; Find the chords on FIDA
+  geom = GET_CERGEOM(shot)
+  cer_beam_order = GET_CER_BEAM_ORDER(shot)
+  ;; Here we will use the labels and the major radii for sure
+
+  status = MDSPLUS_SETUP()
+  MDSOPEN,'IONS',shot,STATUS=status
+
+  ;; Loop through the lineIDs in MDSPlus to find which chords are on
+  ;; FIDA
+  mds_labels = STRARR(N_ELEMENTS(geom.labels))
+  FOR i=0,N_ELEMENTS(geom.labels)-1 DO BEGIN &$
+      ;; Turn TANGx, TANGxx, VERTx, VERTxx into TANGENTIALxx or VERTICALxx
+      chan = STRTRIM(FIX(STRMID(geom.labels[i],4,2)),2) &$
+      IF STRCMP(geom.labels[i],'t',1,/FOLD) THEN $
+        mds_labels[i]='TANGENTIAL.CHANNEL'+STRING(chan,FOR='(I02)') &$
+      IF STRCMP(geom.labels[i],'v',1,/FOLD) THEN $
+        mds_labels[i]='VERTICAL.CHANNEL'+STRING(chan,FOR='(I02)') &$
+  ENDFOR
+
+  ;; Get all the line-IDs to see who's tuned to FIDA
+  is_on_fida=BYTARR(N_ELEMENTS(mds_labels)) &$
+  FOR i=0,N_ELEMENTS(mds_labels)-1 DO BEGIN &$
+      point = '\IONS::TOP.CER.CALIBRATION.'+mds_labels[i]+':LINEID' &$
+      mds_lineid = MDSVALUE(point) &$
+      IF STRCMP(mds_lineid,'D I 3-2',7) THEN is_on_fida[i]=1 &$
+  ENDFOR
+  wh_fida = WHERE(is_on_fida,nwh_fida)
+
+  IF nwh_fida EQ 0 THEN GOTO,GET_OUT
+  ;; If we're this far, then we need to get all the data.
+
+  ;; Here are the labels for chords on FIDA
+  cer_labels = geom.labels[wh_fida]
+  mds_labels = mds_labels[wh_fida]
+  ;; Now get directory labels for tssub.dat
+  ;; This is chords, like v01, v19, etc...
+  chords = STRARR(N_ELEMENTS(cer_labels))
+  FOR i=0,N_ELEMENTS(cer_labels)-1 DO BEGIN &$
+      chan = STRTRIM(FIX(STRMID(cer_labels[i],4,2)),2) &$
+      IF STRCMP(cer_labels[i],'t',1,/FOLD) THEN $
+        chords[i]='t'+STRING(chan,FOR='(I02)') &$
+      IF STRCMP(cer_labels[i],'v',1,/FOLD) THEN $
+        chords[i]='v'+STRING(chan,FOR='(I02)') &$
+  ENDFOR
+  PRINT,'Chords on D-alpha:'
+  PRINT,mds_labels
+  PRINT,cer_labels
+  PRINT,chords
+
+  ;; Set the beam we're looking at
+  IF ~KEYWORD_SET(beam) THEN $
+    beam = '330lt'  ;; for FIDA 
+
+ ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+;we need to see if there is a tssub file for this shot
+;if so, we will get NBI histories, store active and bg spectra
+ cerfit_dir=STRJOIN([GETENV('HOME'),'cerfitfida'],PATH_SEP())
+ IF KEYWORD_SET(user) THEN cerfit_dir=STRJOIN(['/home',user,'cerfitfida'],PATH_SEP())
+ dir=STRJOIN([cerfit_dir,STRTRIM(shot,2)],PATH_SEP())
+ test_tssub_shot = FILE_TEST(dir,/DIR)
+ beam_str=-1
+ IF test_tssub_shot THEN BEGIN
+    MESSAGE,'TSSUB file found for shot'+STRTRIM(shot,2),/CONT
+    ;; Get the NBI histories so we can divide out the fraction of time
+    ;; the CX beam is on.
+    cx_beam = BAG_TSSUB2_BEAM_NAME(beam)
+    MESSAGE,'Getting NBI',/CONT
+    beam_str = GET_NBI(shot)
+    wh_cx_beam = WHERE(STRPOS(beam_str.names,cx_beam) GT 0,nwh_cx_beam)
+ ENDIF
+;@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  
+  ;; absolute calibration is done for a couple of possible
+  ;; wavelengths for the CER systems.
+  ;; Typically 4686.0, 5290.5, 6562.0
+  cal_lines = [4686.0, 5290.5, 6562.0]
+
+  ;; Now, for all of the possible chords,
+  ;; then get the chord data
+  ;; then get the dispersion and calibration data
+  ;; then get the wavelength axis
+ 
+  result = {shot:shot,$
+            chords:chords,$
+            beam:beam,$
+            ierr:1}
+
+
+  count=0
+  FOR i=0,N_ELEMENTS(cer_labels)-1 DO BEGIN
+      ;; Now get the CER data
+      MESSAGE,'Processing chord '+chords[i],/CONT
+
+      GET_CHORD,shot,chords[i],/WHITE
+
+
+
+      ;; Now get dispersion
+      status = MDSPLUS_SETUP()
+      MDSOPEN,'IONS',shot,STATUS=status
+      point = '\IONS::TOP.CER.CALIBRATION.'+mds_labels[i]+':DISPERSION'
+      disp = MDSVALUE(point)
+      point = '\IONS::TOP.CER.CALIBRATION.'+mds_labels[i]+':ORDER'
+      order = MDSVALUE(point)
+      point = '\IONS::TOP.CER.CALIBRATION.'+mds_labels[i]+':GAIN'
+      gain = MDSVALUE(point)
+      point = '\IONS::TOP.CER.CALIBRATION.'+mds_labels[i]+':ISIGN'
+      isign = MDSVALUE(point)
+      isign*=-1.0 ;; Flip it for multiplying into dispersion
+
+      print,'chord:'+chords[i]
+      print,'wl:',chord_data.wl
+      print,'Disp:',disp
+      print,'Order:',order
+      print,'Gain:',gain
+      print,'isign:',isign
+ 
+IF chord_data.wl LT 6500. THEN GOTO,SKIP_CHORD
+IF chord_data.wl GT 6620. THEN GOTO,SKIP_CHORD
+;IF chord_data.wl GT 6560. THEN GOTO,SKIP_CHORD ;eliminates tang
+;chords
+
+;; Here now we need to get a wavelenth reference from teh
+      ;; tokamak data.  This is done via either the O-V line at
+      ;; 6500.00 A or the two C-II lines at 6578.05 or 6582.88 A.  The
+      ;; one at 6582.88 A is farther away and should be used unless
+      ;; you are doing a two-gaussian fit.
+      ;; The relevant equations are as follows:
+      ;; If we want to form teh wavelengt axis, then make our guess
+      ;; based on the approximate wavelength axis and line rest
+      ;; wavelength, then we do the following:
+      ;; pixels = FINDGEN(npix)+1.0
+      ;; pixels_dispersed = (pixels - npix/2.0)*disp*isign
+      ;; lambda_guess = pixels_dispersed + tuned_wavelength/order
+      ;;
+      ;; Now the tuned wavelength is only approximate, so we need to
+      ;; get a fit to a known line and then shift the axis.
+      ;; This is done by setting the line rest wavelength as the
+      ;; guess, fitting, and then shifting the axis.
+      ;; i.e.
+      ;; lambda = lambda_guess - (fiducial - guess_line)
+      
+      ;; The other way to do it is to specify the exact line location
+      ;; (in pixels) of the rest wavelength of the known line.  This
+      ;; is obtained from fitting offline.
+      ;; In this case, then we define lambda as
+      ;; lambda = 
+
+      npix = (SIZE(chord_data.data,/DIM))[0]
+
+      ;; This is our guess for the wvelength axis where we assume that
+      ;; the middle of the chip is approximately at the tuned wavelength.
+      lambda_guess = (FINDGEN(npix)+1.0-npix/2.0)*disp*isign + chord_data.wl/order  
+
+      ;; For teh CER systems we can be tuned to the blue side (~6514)
+      ;; and use the O-V line at 6500 A.  Or be tuned to the red side
+      ;; (~6610) and use the C-II lines at 6578.05, 6582.88 A.
+
+      IF chord_data.wl LT 6561.0 THEN BEGIN
+          ;; Determine the fiducial by finding the O-V line at
+          ;; 6500.0 A.  It'll be about a 3 A width, and smooth
+          ;; background for about 20 A around it.
+          IF ~KEYWORD_SET(guess_range) THEN guess_range = 20.0 ;; A
+          guess_line = 6500.24 ;; A
+      ENDIF ELSE BEGIN
+          ;; Determine the fiducial by finding the C-II line at
+          ;; 6582.88 A.  It'll be about a 3 A width.
+          IF ~KEYWORD_SET(guess_range) THEN guess_range = 10.0 ;; A
+          guess_line = 6582.88 ;; A
+      ENDELSE
+
+      wh_guess = WHERE(lambda_guess GE guess_line - guess_range/2.0 AND $
+                       lambda_guess LE guess_line + guess_range/2.0,nwh_guess)
+      toFitX = lambda_guess[wh_guess]
+;@@@@@@@@@@@@@@@
+ ;; Time-average raw data for wavecal
+          ntimes=(size(chord_data.data,/DIM))[1]-1   
+          subset=chord_data.data[*,0:ntimes]
+          data_avg = TOTAL(subset,2)/N_ELEMENTS(subset[1,*])
+          toFitY = data_avg[wh_guess]
+          toFitY = RM_SPIKES(toFitY)
+;@@@@@@@@@@@@@@@
+      ;; Determine the c.o.m. of this region, which is the most likely 
+      toCOM = toFitY-MIN(toFitY)
+      com = TOTAL(toFitX*toCOM)/TOTAL(toCOM)
+     
+;if the spectrometer is tuned so that line isn't seen, then 
+;going to have to skip this part because can't get a good fit
+flag=0
+IF abs(min(toFitX)-guess_line) LT .5 THEN BEGIN 
+flag=1
+fiducial=guess_line
+MESSAGE,'Cannot find enough line to calibrate wavelength',/CONT
+ENDIF
+IF ~flag THEN BEGIN
+      ;; amp, loc, wid, off, slope
+      gParams = [100.0, com, 3.0, 10.0, 0.1]
+      gFit = GAUSSFIT(toFitX,toFitY,gParams,NTERMS=5)
+      fiducial = gParams[1] ;; Apparent O-V line location
+ENDIF      
+      lambda = lambda_guess - (fiducial-guess_line) ;; Correct our guess
+      toFitX -= (fiducial-guess_line)
+    
+      ;; If passed in, use user's fiducial for the wavelength axis
+      IF KEYWORD_SET(fiducial_user) THEN BEGIN
+          MESSAGE,'Using user-defined fiducial',/CONT
+          fiducial = fiducial_user[count]
+          PRINT,'fiducial:',fiducial
+          lambda = (FINDGEN(npix)+1.0-fiducial)*disp*isign + guess_line
+          ;; Clobber the gaussian fit to eliminate confusion
+          gfit *=0.0
+      ENDIF
+
+      chan = STRTRIM(FIX(STRMID(chords[i],1,2)),2)
+      IF STRCMP(chords[i],'t',1,/fold) THEN $
+        chord_to_calib = 'tang'+chan
+      IF STRCMP(chords[i],'v',1,/fold) THEN $
+        chord_to_calib = 'vert'+chan
+      foo=MIN((chord_data.wl-cal_lines)^2,wh_cal)
+      diff=SQRT(foo)
+      ;; If we're within 100 angstroms then its fine (FIDA
+      ;; wing is 48 Angstroms away from D-alpha)
+      IF diff LT 100.0 THEN BEGIN
+          wave_to_calib = cal_lines[wh_cal]
+      ENDIF ELSE BEGIN
+          MESSAGE,'Too far from calibrated intensity wavelength',/CONT
+          wave_to_calib=-1.0
+      ENDELSE
+      abs_calib = READ_ABS_CALIB(chord_to_calib,WAVE=wave_to_calib)
+      ;; Find appropriate shot
+      wh_lt = WHERE(abs_calib.shot LT shot,nwh_lt)
+;      whc = LAST(WHERE(abs_calib.shot LT shot))
+      whc = wh_lt[nwh_lt-1]
+;problem with 2010 calibrations, use back calibration
+IF shot LT 142000 AND shot GT 134721 THEN whc+=1
+      calib = abs_calib.cal[whc]*1.e-7 ;; counts/s to ph/s/cm**2-sR
+      print,'calib:',calib
+      ;; Now that we have the wavelength, we can turn the
+      ;; data in counts into counts/sec and then radiance
+    
+      caldata=chord_data.data
+      sz=size(caldata)
+      for j=0,sz[2]-1 do begin &$
+        t_integ = chord_data.t_integ[j]*1.e-3 &$ ;; sec
+        caldata[*,j]/=t_integ &$ ;; Spectrum is now counts/sec
+      end
+      caldata/=gain ;; Remove gain
+      caldata/=calib*disp  ;; counts/sec -> ph/s-cm**2-sR-A
+      caldata*=100.^2  ;; /cm**2 -> /m**2
+
+;; Error of raw data
+      dataerr = SQRT(ABS(caldata))>1.0
+
+;@@@@@@@@@@@@@@@@@@@@@@@@@
+  ;check if tssub is available for this chord
+    dir=STRJOIN([cerfit_dir,STRTRIM(shot,2),chords[i]],PATH_SEP())
+    test_tssub_chord = FILE_TEST(dir,/DIR)
+      spec=-1
+      err=-1
+      time=-1
+      active=-1
+      bg=-1
+      bg_all=-1  
+      tssub_str=-1
+      bgbalance=0
+
+      activeonly=-1
+      errao=-1
+      activetime=-1
+      
+    IF test_tssub_chord THEN BEGIN
+      MESSAGE,'Processing TSSUB for chord '+chords[i],/CONT
+      spec_str=get_spectrum(shot,chords[i],beam,/NEUTRONS,USER=user,$
+               CALIBRATED_DATA=caldata,T_START=chord_data.t_start,BALANCE=balance)
+       IF ~spec_str.ierr THEN BEGIN  
+            tssub_str = spec_str.tssub_str
+
+            IF WHERE(TAG_NAMES(tssub_str) EQ 'ts') EQ -1 && $
+              (N_ELEMENTS(tssub_str.ts) GT 1 || tssub_str.ts NE 0) THEN BEGIN
+                err=0.*spec_str.spectra 
+                ;; Run through each slice and divide by the fraction of time the
+                ;; beam is on
+                FOR j=0,N_ELEMENTS(tssub_str.ts)-1 DO BEGIN
+                    cer_t_start = chord_data.t_start[tssub_str.ts[j]-1]
+                    cer_t_integ = chord_data.t_integ[tssub_str.ts[j]-1]
+                    wh_t_nbi = WHERE(beam_str.time GE cer_t_start*1.e-3 AND $
+                                     beam_str.time LE (cer_t_start+cer_t_integ)*1.e-3,nwh_t_nbi)
+                    frac = MEAN(FLOAT(beam_str.ibeam[wh_t_nbi,wh_cx_beam[0]]))
+                    spec_str.spectra[*,j]/=frac
+                    
+                    
+                    ;; Form the intrinsic error of each pixel's counts by adding
+                    ;; the error on the active and background counts in quadrature.
+                    FOR k=0,(SIZE(spec_str.spectra,/DIM))[0]-1 DO BEGIN
+                        erra = SQRT(ABS(spec_str.active[k,j]))>1.0
+                        errb = SQRT(ABS(spec_str.background[k,j]))>1.0
+                        err[k,j] = SQRT(erra^2 + errb^2)
+                    ENDFOR ;;k      
+                ENDFOR ;;j
+                spec=spec_str.spectra
+                active=spec_str.active
+                bg=spec_str.background
+                bg_all=spec_str.all_background
+                bgbalance=spec_str.balance
+                time=spec_str.time
+            ENDIF ELSE BEGIN
+                spec=-1
+                active=-1
+                bg=-1
+                bg_all=-1
+                bgbalance=-1
+                time=-1
+            ENDELSE
+
+            IF WHERE(TAG_NAMES(tssub_str) EQ 'ACT_ONLY') NE -1 && $
+              (N_ELEMENTS(tssub_str.act_only) GT 1 || tssub_str.act_only NE 0) THEN BEGIN
+                errao=0.*spec_str.active_only
+                  FOR jj=0,N_ELEMENTS(tssub_str.act_only)-1 DO BEGIN
+                      ;; Run through each slice and divide by the fraction of time the
+                      ;; beam is on 
+;                       cer_t_start = chord_data.t_start[tssub_str.act_only[jj]-1]
+;                       cer_t_integ = chord_data.t_integ[tssub_str.act_only[jj]-1]
+;                       wh_t_nbi = WHERE(beam_str.time GE cer_t_start*1.e-3 AND $
+;                                        beam_str.time LE (cer_t_start+cer_t_integ)*1.e-3,nwh_t_nbi)
+;                       frac = MEAN(FLOAT(beam_str.ibeam[wh_t_nbi,wh_cx_beam[0]]))
+;                       spec_str.active_only[*,jj]/=frac
+                      
+                      ;; Form the intrinsic error of each pixel's counts by adding
+                      ;; the error on the active and background counts in quadrature.
+                      FOR k=0,(SIZE(spec_str.active_only,/DIM))[0]-1 DO BEGIN
+                          erra = SQRT(ABS(spec_str.active_only[k,jj]))>1.0
+                          errao[k,jj] = SQRT(erra^2)
+                      ENDFOR ;;k 
+                  ENDFOR ;;jj
+                  activeonly=spec_str.active_only
+                  activetime=spec_str.active_time
+            ENDIF ELSE BEGIN
+                  activeonly=-1
+                  activetime=-1
+            ENDELSE
+        ENDIF ;;spec_str.ierr
+   ENDIF ;;test_tssub_chord
+
+;@@@@@@@@@@@@@@@@
+
+      ;; Get the major radius of this measurement
+      wh_geom_beam = WHERE(STRCMP(cer_beam_order,beam,/FOLD))
+      wh_geom_label = WHERE(STRCMP(geom.labels,cer_labels[i],/FOLD))
+      radius = geom.rcere[wh_geom_label, wh_geom_beam]
+      geomfac = geom.geomfac[wh_geom_label, wh_geom_beam]
+
+
+      ;; Create the structure
+      chord_str = {wavelength:lambda,$
+                   radius:radius,$
+                   data:caldata,$
+                   dataerr:dataerr,$
+                   datatime:chord_data.t_start[0:ntimes],$
+                   integtime:chord_data.t_integ[0:ntimes],$ 
+                   spec:spec,$
+                   err:err,$
+                   time:time,$
+                   active:active,$
+                   bg:bg,$
+                   bg_all:bg_all,$
+                   balance:bgbalance,$
+                   activeonly:activeonly,$
+                   errao:errao,$
+                   activetime:activetime,$
+                   tssub_str:tssub_str,$
+                   geomfac:geomfac,$
+                   calib:calib,$
+                   disp:disp,$
+                   gain:gain,$
+                   wc_wl:toFitX,$
+                   wc_fit:gFit,$
+                   tuned_wl:chord_data.wl,$
+                   pixel:INDGEN(npix),$
+                   rawdata:chord_data.data,$
+                   ierr:0}
+
+
+      result = CREATE_STRUCT(result,chords[i],chord_str)
+      GOTO,CHORD_GOOD
+
+      SKIP_CHORD:
+      result = CREATE_STRUCT(result,chords[i],{ierr:1})
+      CHORD_GOOD:
+  ENDFOR
+
+  ;; No error if we've made it thus far
+  result.ierr=0
+ ;; Add the NBI infomation for later use in the attenuation data.
+   result = CREATE_STRUCT(result,'beam_str',beam_str)
+  GET_OUT:
+  
+  RETURN,result
+
+END

@@ -1,0 +1,129 @@
+
+Device, True=24, Decompose=0, Retain=2
+
+
+;add cerview
+SETENV,'CERVIEW_DIR=/fusion/projects/codes/cer/idl/cerview/'
+!path = !path + ":" + expand_path("+/fusion/projects/codes/cer/idl/cerview")
+@/fusion/projects/codes/cer/idl/cerview/cerview.idl
+
+
+;compile idl routines
+.compile /fusion/projects/diagnostics/fida/idl/build_array.pro
+.compile /fusion/projects/diagnostics/fida/idl/build_structure.pro
+.compile /fusion/projects/diagnostics/fida/idl/concat.pro
+.compile /fusion/projects/diagnostics/fida/idl/default.pro
+.compile /fusion/projects/diagnostics/fida/idl/defined.pro
+.compile /fusion/projects/diagnostics/fida/idl/guess_data_type.pro
+.compile /fusion/projects/diagnostics/fida/idl/has_tag.pro
+.compile /fusion/projects/diagnostics/fida/idl/info.pro
+.compile /fusion/projects/diagnostics/fida/idl/is_null.pro
+.compile /fusion/projects/diagnostics/fida/idl/nrl_formulary.pro
+
+;compile texttoidl routines
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/matchdelim.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/nexttok.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/strcnt.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/str_token.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/strtrans.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/sub_sup_idl.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/textable.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/translate_sub_super.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/textoidl.pro
+.compile /fusion/projects/diagnostics/fida/idl/textoidl/showtex.pro
+
+;compile fit routines
+;.compile /fusion/projects/diagnostics/fida/idl/fit/fit_common.pro
+;.compile /fusion/projects/diagnostics/fida/idl/fit/spl_mod_common.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/rhosig.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/sigrho.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/design_matrix.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/linearfit.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/amotry.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/amoeba_4d.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/bag_spl_mod.pro
+.compile /fusion/projects/diagnostics/fida/idl/fit/fit_profile.pro
+
+;compile math routines
+.compile /fusion/projects/diagnostics/fida/idl/math/quadratic_root.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/cubic_root.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/dotp.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/magnitude.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/pi.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/rotate_3d.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/sign.pro
+.compile /fusion/projects/diagnostics/fida/idl/math/vector_angle.pro
+
+;compile plot routines
+.compile /fusion/projects/diagnostics/fida/idl/plot/bag_annotate.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/bag_cleanplot.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/bag_plot_setup.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/bag_tek_color.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/cclean.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/cleanplot.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/color.pro
+.compile /fusion/projects/diagnostics/fida/idl/plot/oploterr.pro
+
+
+;compile tssub routines
+.compile /fusion/projects/diagnostics/fida/tssub/bag_tssub2_beam_name.pro
+.compile /fusion/projects/diagnostics/fida/tssub/get_elms_mdsplus.pro
+.compile /fusion/projects/diagnostics/fida/tssub/read_tssub_file.pro
+.compile /fusion/projects/diagnostics/fida/tssub/rm_spikes.pro
+.compile /fusion/projects/diagnostics/fida/tssub/run_tssub.pro
+.compile /fusion/projects/diagnostics/fida/tssub/write_tssub_file.pro
+.compile /fusion/projects/diagnostics/fida/tssub/get_spectrum.pro
+.compile /fusion/projects/diagnostics/fida/tssub/contour_spectrum.pro
+
+
+;compile data routines
+.compile /fusion/projects/diagnostics/fida/data/bag_spred_get_data.pro
+.compile /fusion/projects/diagnostics/fida/data/beam_get_fractions.pro
+.compile /fusion/projects/diagnostics/fida/data/d3d_beams.pro
+.compile /fusion/projects/diagnostics/fida/data/getrho.pro
+.compile /fusion/projects/diagnostics/fida/data/neutralizer.pro
+.compile /fusion/projects/diagnostics/fida/data/wavelength_to_energy.pro
+.compile /fusion/projects/diagnostics/fida/data/zipfit_get_profile_beam.pro
+.compile /fusion/projects/diagnostics/fida/data/get_oblique_data.pro
+.compile /fusion/projects/diagnostics/fida/data/gaprofiles_valid.pro
+.compile /fusion/projects/diagnostics/fida/data/gaprofiles_get_profiles.pro
+.compile /fusion/projects/diagnostics/fida/data/get_profile.pro
+.compile /fusion/projects/diagnostics/fida/data/nb_compare.pro
+.compile /fusion/projects/diagnostics/fida/data/pix_to_wavelength_3G.pro
+.compile /fusion/projects/diagnostics/fida/data/cal_3g.pro
+
+;compile cer routines
+.compile /fusion/projects/diagnostics/fida/data/cer/read_abs_calib.pro
+.compile /fusion/projects/diagnostics/fida/data/cer/get_cer_data.pro
+
+;compile main ion routines
+.compile /fusion/projects/diagnostics/fida/data/mainion/label_data_format_read.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/mir_read_cerdata.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_analysis_big.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_beam_name_parse.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_cerfit_analysis_big.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_cerfit_find_scripts.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_cerfit_stark_output.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_cerview.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_chord_name_parse.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_chord_param.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_dispersion.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_param_cerdata_path.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_param_detector.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_param_dispersion.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/bst_param_wavelength.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_abs_calib.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_cerfit_wavecal.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_fiducial_offset.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_fiducial_wavelength.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_geomfac.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_npixel.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/dalpha_get_radius.pro
+.compile /fusion/projects/diagnostics/fida/data/mainion/get_main_ion_data.pro
+
+
+;compile gui routines
+.compile /fusion/projects/diagnostics/fida/gui/fplot.pro
+.compile /fusion/projects/diagnostics/fida/gui/tssub2.pro
+.compile /fusion/projects/diagnostics/fida/gui/fprofile.pro
+.compile /fusion/projects/diagnostics/fida/gui/fida_gui.pro

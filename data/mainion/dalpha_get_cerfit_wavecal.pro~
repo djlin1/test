@@ -1,0 +1,155 @@
+;; This gets the cerfit output files for wavecal fitting
+;; All wavecal fits are done by fitting the neon line at 
+FUNCTION DALPHA_GET_CERFIT_WAVECAL,shot,chord,PLOT=plot,DIR=dir
+
+  CATCH,err_status
+  IF err_status NE 0 THEN BEGIN
+      CATCH,/CANCEL
+      PRINT,'Caught an error in DALPHA_GET_CERFIT_WAVECAL'
+      PRINT,!ERROR_STATE.MSG
+      HELP,/LAST_MESSAGE
+      GOTO,GET_OUT
+  ENDIF
+  result={ierr:1}
+
+  IF KEYWORD_SET(dir) THEN shot_dir = dir ELSE BEGIN
+      home_dir=EXPAND_PATH('~')+'/'
+      cerfit_dir=home_dir+'cerfit/'
+      wavecal_dir=home_dir+'cerfit/wavecal/'
+      shot_dir=home_dir+'cerfit/wavecal/'+STRTRIM(shot,2)+'/'
+  ENDELSE
+
+  ;; Get the directory structure of /u/user/cerfit/wavecal/shot/
+  shot_dir_test=FILE_TEST(shot_dir,/DIRECTORY)
+  IF ~shot_dir_test THEN BEGIN
+
+      home_dir='/u/grierson/'
+      cerfit_dir=home_dir+'cerfit/'
+      wavecal_dir=home_dir+'cerfit/wavecal/'
+      shot_dir=home_dir+'cerfit/wavecal/'+STRTRIM(shot,2)+'/'
+      IF ~FILE_TEST(shot_dir,/DIRECTORY) THEN BEGIN
+
+          MESSAGE,'No wavecal analysis for this shot',/CONTINUE
+          GOTO,GET_OUT
+      ENDIF 
+  ENDIF
+
+  ;; Get the wavecal file
+  file=shot_dir+'w'+STRTRIM(shot,2)+'.7m'+STRTRIM(FIX(strmid(chord,1,2)),2)
+  test=FILE_TEST(file)
+  IF ~test THEN BEGIN
+      MESSAGE,'No wavecal analysis for this chord',/CONTINUE
+      GOTO,GET_OUT
+  ENDIF
+
+  str=' '
+  GET_LUN,unit
+  OPENR,unit,file
+  ;; Info and dispersion
+  READF,unit,str
+;  disp=DOUBLE(STRMID(str,51,6))
+  ;; Info about chord, ...
+  READF,unit,str
+  ;; Header amplitude, temp, etc...
+  READF,unit,str
+  ;; The one Neon Line
+  READF,unit,str
+  line1=DOUBLE(STRMID(str,37,6))
+  line1_err = DOUBLE(STRMID(str,43,6))
+  CLOSE,unit
+  FREE_LUN,unit
+
+  ;; Add the offset from beam-into-gas and wavecal
+  correction=DALPHA_GET_FIDUCIAL_OFFSET(shot,chord)
+  IF ~correction.ierr THEN BEGIN
+      MESSAGE,'Applying fiducial offset',/CONTINUE
+      line1+=correction.value
+  ENDIF
+
+  ;; The actual neon wavelengths.
+;  neon=[6506.5281d,6532.8824d,6598.9528d]
+
+  ;; For FY11 used neon on far right of chip
+  IF shot GE 144080 AND shot LE 147778 THEN $
+    neon=6506.5277d
+  ;; For FY12 used neon on center of chip
+  IF shot GE 148158 AND shot LE 800000 THEN $
+    neon=6532.8824d
+  ;; The D-alpha wavelength 6561.03
+  dalpha=DALPHA_GET_FIDUCIAL_WAVELENGTH(shot,chord)
+
+  ;; Now dow it the BST_DISP way
+  RESOLVE_ROUTINE,'bst_dispersion',/COMPILE_FULL_FILE,/EITHER,/NO_RECOMPILE
+  ;; Will need to access BST data and dispersion routines.
+  COMMON BST_CHORD_PARAM,chord_param
+  IF FIX(STRMID(chord,1,2)) GE 1 AND FIX(STRMID(chord,1,2)) LE 8 THEN BEGIN
+      BST_CHORD_PARAM,shot,chord,'30lt'
+  ENDIF ELSE IF FIX(STRMID(chord,1,2)) GE 9 AND FIX(STRMID(chord,1,2)) LE 16 THEN BEGIN
+      BST_CHORD_PARAM,shot,chord,'210rt'
+  ENDIF ELSE IF FIX(STRMID(chord,1,2)) GE 17 THEN BEGIN
+      BST_CHORD_PARAM,shot,chord,'330lt'
+  ENDIF      
+  
+  spec_param=BST_DISP_GET_SPEC_PARAM()
+  
+  ;; Wavelength at center of chip.
+  lambda0=BST_DISP_GET_LAMBDA0(WAVELENGTH=neon,$
+                               LOCATION=line1,$
+                               /FROM_EDGE,$
+                               SPEC_PARAM=spec_param)
+  ;; Pixel location of D-alpha
+  fiducial=BST_DISP_GET_LOCATION(WAVELENGTH=dalpha,$
+                                 LAMBDA0=lambda0,$
+                                 /FROM_EDGE,$
+                                 SPEC_PARAM=spec_param)
+  pixel=DINDGEN(DALPHA_GET_NPIXEL(shot,chord))+1d0
+  ;; Wavelength as a function of pixel
+  wavelength=BST_DISP_GET_WAVELENGTH(LAMBDA0=lambda0,$
+                                     LOCATION=pixel,$
+                                     /FROM_EDGE,$
+                                     SPEC_PARAM=spec_param)
+  ;; Dispersion as a function of pixel
+  dispersion=DERIV(pixel,wavelength)
+  
+  ;; Get the dispersion at D-alpha
+  disp=INTERPOL(dispersion,fiducial)
+  
+  ;; Compute the two carbon II lines and the oxygen and the H-alpha
+  ;; line
+  carbonII_1 = 6578.05
+  carbonII_2 = 6582.88
+  H_alpha = 6562.81
+  He_II = 6560.1
+  oxygenV = 6500.24
+  carbonII_1_fiducial=INTERPOL(pixel,wavelength,carbonII_1)
+  carbonII_2_fiducial=INTERPOL(pixel,wavelength,carbonII_2)
+  H_alpha_fiducial=INTERPOL(pixel,wavelength,H_alpha)
+  He_II_fiducial=INTERPOL(pixel,wavelength,He_II)
+  oxygenV_fiducial=INTERPOL(pixel,wavelength,oxygenV)
+  
+  
+
+  result={cerfit:line1,$
+          fiducial:fiducial[0],$
+          fiducial_err:line1_err,$
+          dispersion:disp[0],$
+          wavelength:wavelength,$
+          pixel:pixel,$
+          lambda0:lambda0,$
+          carbonII_1:carbonII_1,$
+          carbonII_1_fiducial:carbonII_1_fiducial,$
+          carbonII_2:carbonII_2,$
+          carbonII_2_fiducial:carbonII_2_fiducial,$
+          H_alpha:H_alpha,$
+          H_alpha_fiducial:H_alpha_fiducial,$
+          He_II:He_II,$
+          He_II_fiducial:He_II_fiducial,$
+          oxygenV:oxygenV,$
+          oxygenV_fiducial:oxygenV_fiducial,$
+          ierr:0}
+
+  GET_OUT:
+
+  RETURN,result
+
+END

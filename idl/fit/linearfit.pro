@@ -1,0 +1,474 @@
+  
+;***********************************************************************
+;
+;  4dlib/FITTING/linearfit.pro
+;
+;  created:
+;
+;  modified:
+;  20110403 novi Removed call to F_debug().  A global debug flag.
+;  20110330 TCL Changed the wgt algorithm for point data to scale the 
+;               uncertainties by the normalization factor.  The 
+;               uncertainties were not scaled as they should be, as 
+;               evident by the change in the chi^2 of the fit with the 
+;               square of the input normalization.  This did not affect
+;               the standard way of fitting density with mixed point and
+;               line data--the normalization of the weights was done
+;               properly there. (See comment in density.pro for 20110331).
+;  20060718 tbt Looking at error at 150: P has a subscript of -1.
+;               for shot 110570, 2050 in /u/wanga/ANA/110570
+;  20050125 TCL fixed an index problem in the calculation of the 
+;               correction to the interferometer data for density 
+;               outside the separatrix
+;  20040302 tbt Looked for troidal_rotation edge fit problem 
+;               (see toroidal_rotation_new.pro)
+;    2/11/04  TCL - Changed the algorithm of the edge fit to be more
+;                   robust.  The old algorithm had cases which returned
+;                   Inf, which the fitter didn't like.
+;    9/29/03  tbt - Put in Hack for Dan Thomas who calls spl_mod.
+;    2/25/03  tbt - Added Catch for getting errors in SVDC
+;    8/15/00  tbt - took out prints. Added ldebug
+;    5/??/00  Luce - updates.
+;    3/01/99  tbt  Added outint as an argument 
+;    2/23/99  TCL  Fixed edge model to have positive definite scrapelength.
+;                  Fixed bug where the coding did not handle the case 
+;                  m.edge = 'fit' and m.boundary = 'fix' properly.
+;    6/02/98  tbt  Added line from mixed
+;   10/22/96  TBT  Put /0 check back in for Schissel.
+;    9/23/96  TBT  Took out check on divide by zero as per Luce.
+;    9/23/96  TBT  Infinite run state for cn=max(w)/min(w) when min(w)=0.
+;    8-9-96     K. Greene -- Add use of function TEMPORARY
+;    5/07/96  TBT  Getting 4 divide by zero's from call from density using
+;                  /u2/stallard/efit/87013/kefit_4dfits when three co2
+;                  points are turned off.
+;    5/06/96  TCL  Added coding to properly handle a 3 knot fit with 
+;                  both the central and edge values specified
+;    5/02/96  TBT  Bomb on DECOM not having 2 dimensions. Check now.
+;    5/02/96  TBT  Bomb for 87335.1800 because ldata.data_err = 0. / by 0.
+;                  Put in temp fix.
+;    5/01/96  TCL  Removed edge weight
+;                  Removed reference to match the edge derivative
+;    3/29/96  TBT  Bomb when edge fit - auto, ntimes =6; change -1 to 0.
+;    2/29/96  TBT  Took Cary's version.
+;    2/08/96  TBT  Cary updated for normalized wgt.
+;    1/29/96  TBT  Replaced commons with spl_mod_common include
+;    1/21/96  TBT Took out design_matrix_dens and put it in its
+;                   own file.
+;    1/18/96  TBT Added ynorm to common data_outcom
+;   10/04/95  T.B. Terpstra - Error Arg A must be a 2-D matrix: DECOM
+;                               Check that decom has 2 dimensions.
+;    6-  -95  K. Greene -- Change names of "numerical recipe" routines
+;		(IDL 4.0)	nr_ludcmp   -->   ludc
+;				nr_lubksb   -->   lusol
+;				nr_svd      -->   svdc
+;				nr_svbksb   -->   svsol
+;
+;
+;***********************************************************************
+
+function linearfit, p, outint=outint, debug=ldebug
+
+@/fusion/projects/diagnostics/fida/idl/fit/spl_mod_common
+
+common msg_com, msg_printed
+
+;  outint is a returned array for use in density::fit_dens for edge values.
+outint = [-99.]   ; default to not used
+
+If Not Keyword_set(ldebug) Then ldebug = 0  ; default to no debug printing
+;If F_debug()               Then ldebug = 1
+
+If N_Elements(msg_printed) Lt 1 Then msg_printed = 0   ; # of printed messages
+
+If ldebug Then Begin
+  Print, '------------------------------------------------------------ Linearfit'
+  message, /Continue, 'Linearfit variables  = '
+  Print, 'Linearfit: p = ', p
+  Help, p, /struct
+  Print, 'Linearfit: m.type = ', m.type
+  Print, 'Linearfit: m structure ='
+  Help, m, /str
+  Print, 'Linearfit: pp structure ='
+  Help, pp, /str
+Endif
+
+numknot  = m.numknot        ;    = n_elements(p) + 2
+
+if m.autoknot eq 'no' then begin
+  knotloc = m.knotloc(0: numknot - 1) 
+  nfree = 0
+endif else begin
+  nfree = numknot -  2
+  knotloc=sigrho(p(0:nfree - 1 ) , nfree )
+endelse
+
+;
+;  norm is an array with one normalization value for each time.
+;
+; Hack for Dan Thomas 9/29/2003 tbt
+
+if string(m.normalize) eq 'yes' then Begin
+
+  norm = p(pp.norm:pp.norm+norm_ntimes-1) 
+
+EndIf else if string(m.normalize) eq 'no' then Begin
+
+             norm = intarr(norm_ntimes) + 1
+         Endif   else Begin 
+             If N_elements(ydata_norm) Gt 0 Then begin
+                 norm = ydata_norm ; norm_ntimes of them
+             Endif  Else if n_tags(corerefldata) le 0 and n_tags(edgerefldata) le 0 then Begin
+;                Message, /Continue, 'hack for Dan Thomas. tbt 9/29/2003'
+;                help, norm_ntimes
+;                Help, /str, m
+;                PRINT, '-------------------------------'
+                 norm = intarr(norm_ntimes) + 1
+             Endif  
+         Endelse    
+;
+; first, do the outer portion fit
+;;;==== modified by zeng 20100315 ===
+
+if string(m.edge) eq 'fit' then begin
+  if m.boundary eq 'free' then begin
+    scrapelength = exp( p(pp.yp1) )
+    youtfit = p(pp.y1) * exp( ( 1. - xout ) / scrapelength ) 
+    bc(2) = p(pp.y1)
+;    Message, /Continue, ' BC[2] set to ' + String( bc[2])
+;    Help, p
+;    Print, 'p[0:2]=', p[0:2]
+;    Print, ' pp structure ='
+;    Help, /str, pp
+;    Print, ' scrapelength = ', scrapelength
+
+  endif else begin
+      scrapelength = exp( p(pp.yp1) )
+      youtfit = bc(2) * exp( ( 1. - xout ) / scrapelength ) 
+  endelse
+
+  chisout = total(((norm(yout_in_time_block) * yout - youtfit)/$
+                   (norm(yout_in_time_block) * yout_err))^2)
+
+  if n_tags(corerefldata) gt 0 then begin
+      cpout=where(corerefldata.rflrho gt 1.0,ncpout) 
+      if ncpout gt 1 and n_elements(xout) gt 1 then begin
+          if max(xout) ge corerefldata.rflrho[0] then youtfit1=interpol(youtfit,xout,corerefldata.rflrho[cpout]) > 0.0 else youtfit1=interpol([youtfit,0],[xout,corerefldata.rflrho[0]],corerefldata.rflrho[cpout]) > 0.0
+          chisoutc=total(((corerefldata.rfldn[cpout]/1e19-youtfit1)/(corerefldata.rflerr[cpout]/1e19))^2)
+          chisout=chisout+chisoutc
+      endif 
+  endif else if n_tags(edgerefldata) gt 0 then begin
+      epout=where(edgerefldata.rflrho gt 1.0,nepout)
+      if nepout gt 1 and n_elements(xout) gt 1 then begin
+          if max(xout) ge edgerefldata.rflrho[0] then youtfit2=interpol(youtfit,xout,edgerefldata.rflrho[epout]) > 0.0 else youtfit2=interpol([youtfit,0],[xout,edgerefldata.rflrho[0]],edgerefldata.rflrho[epout]) > 0.0
+;          youtfit2=interpol(youtfit,xout,edgerefldata.rflrho[epout]) > 0.0
+          chisoute=total(((edgerefldata.rfldn[epout]/1e19-youtfit2)/(edgerefldata.rflerr[epout]/1e19))^2)
+          chisout=chisout+chisoute
+      endif 
+  endif 
+endif else chisout = 0.0
+;;;;===============================
+if m.type eq 'mixed' or m.type eq 'line' then $
+	outint = fltarr(n_elements(ldata))
+
+if string(m.edge) eq 'fit' and m.type eq 'mixed' then  begin
+  outint = fltarr(n_elements(ldata))
+
+   for i = 0,n_elements(ldata) - 1  do begin
+
+    If pp.y1 Lt 0 Then begin
+;     20060718 tbt
+      Print
+      Message, /Continue, 'Error: bad pp.y1 = ' + String(pp.y1)
+      Print, 'PP structure ='
+      Help, /str, pp
+      Help, p
+      Print, 'Ldata structure ='
+      Help, /str, ldata[i]
+      Help, scrapelength
+      Help, outint, i
+      Print, '-----------------------------------------------'
+      Print
+    EndIf
+
+    outint(i) = ldata(i).dl * total(  p(pp.y1) * $
+                exp( ( 1. - ldata(i).rho( $  
+                ldata(i).nin: ldata(i).nin + ldata(i).nout -1  ))$ ; zzz tbt
+                / scrapelength )  ) 
+   endfor
+endif
+;;;;=================================
+;;;----add by zeng 20100315-----
+if n_tags(corerefldata) gt 0 then begin
+    cp=where(corerefldata.rflrho le 1.0,ncp)
+    if ncp le 0 then begin
+        cndata=0
+        goto, SKIP1
+    endif 
+    cxdata=corerefldata.rflrho[cp]
+    cndata=n_elements(cxdata)
+    cydata=corerefldata.rfldn[cp]/1e19
+    cydata_err=corerefldata.rflerr[cp]/1e19
+    cdp=design_matrix(cxdata,knotloc,cgeeinvc,cfx,cb, bcs = bc )
+endif  else cndata=0
+SKIP1: 
+if n_tags(edgerefldata) gt 0 and n_tags(corerefldata) le 0 then begin
+    ep=where(edgerefldata.rflrho le 1.0,nep)
+    if nep le 0 then begin
+        endata=0
+        goto, SKIP11
+    endif 
+    exdata=edgerefldata.rflrho[ep]
+    endata=n_elements(exdata)
+    eydata=edgerefldata.rfldn[ep]/1e19
+    eydata_err=edgerefldata.rflerr[ep]/1e19
+    edp=design_matrix(exdata,knotloc,egeeinvc,efx,eb, bcs = bc )
+endif  else endata=0
+SKIP11:
+;;;===============================
+
+If m.type Eq 'point' Or m.type Eq 'mixed' Then wgt=1./ydata_err Else wgt = 1.
+
+If m.type Eq 'point' Or m.type Eq 'mixed' Then Begin
+ if (numknot eq 1) then begin
+  knotval=total(ydata*wgt^2.)/total(wgt^2.)
+  ydatafit=knotval
+  chisq=total(((ydata-ydatafit)/ydata_err)^2.)
+  return,chisq
+ endif
+EndIf     ; m.type
+
+if m.type eq 'mixed' or m.type eq 'line' then begin
+  dline = fltarr(n_elements(ldata),numknot)
+  bline = fltarr(n_elements(ldata))
+  for i = 0, n_elements(ldata) - 1 do begin
+    dl = design_matrix( ldata(i).rho( 0: ldata(i).nin - 1), $
+		knotloc,geeinvc, fx, b, bcs = bc )
+    dlmat = fltarr( ldata(i).nin ) + ldata(i).dl
+    dline(i,*) = transpose(dlmat # dl)
+    bline(i) = dlmat # b # geeinvc
+  endfor
+endif
+
+case m.type of 
+  'point':  begin
+	dp = design_matrix(xdata,knotloc,geeinvc,fx,b, bcs = bc )
+	;
+        ; add normalization for uncertainties 
+        ; new line for point data with normalization
+        ; TCL 20110330
+	;
+        wgt = [temporary(wgt) / norm(ydata_in_time_block)]
+    	dwgt=fltarr(n_elements(xdata),numknot)
+        d=dp
+       ;;;----add by zeng 20100315-----
+        if cndata gt 0 then begin
+            wgt=[1.0/cydata_err, 1.0/ydata_err]
+            dwgt = fltarr(n_elements(xdata) + n_elements(cxdata),numknot)
+            d=dwgt
+        endif
+        if endata gt 0 and cndata eq 0 then begin
+            wgt=[1.0/eydata_err, 1.0/ydata_err]
+            dwgt = fltarr(n_elements(xdata) + n_elements(exdata),numknot)
+            d=dwgt
+        endif            
+    	sub = b # geeinvc
+
+     	for i=0,n_elements(ydata)-1 do dwgt(i,*)=dp(i,*)*wgt(i)
+
+        datatofit = norm(ydata_in_time_block) * ydata
+
+        if cndata gt 0 then begin
+            sub= [cb# cgeeinvc, b # geeinvc]
+            for i=0,cndata-1 do dwgt(i,*)=cdp(i,*)*wgt(i)
+            for i=0,n_elements(ydata)-1 do dwgt[i+cndata,*]=d(i,*)*wgt(i+cndata)
+            datatofit = [cydata, norm(ydata_in_time_block) * ydata]
+            d[0:cndata-1,*]=cdp
+            d[cndata:*,*]=dp
+        endif 
+        if endata gt 0 and cndata eq 0 then begin
+            sub= [eb# egeeinvc, b # geeinvc]
+            for i=0,endata-1 do dwgt(i,*)=edp(i,*)*wgt(i)
+            for i=0,n_elements(ydata)-1 do dwgt[i+endata,*]=d(i,*)*wgt(i+endata)
+            datatofit = [eydata, norm(ydata_in_time_block) * ydata]
+            d[0:endata-1,*]=edp
+            d[endata:*,*]=dp
+        endif 
+            
+      end
+  'mixed':  begin
+        dp = design_matrix(xdata,knotloc,geeinvc,fx,b, bcs = bc )
+	;
+        ; add normalization for uncertainties
+	;
+        wgt = [temporary(wgt) / norm(ydata_in_time_block)  , 1. / $
+		ldata.data_err]
+        dwgt=fltarr(n_elements(xdata) + n_elements(ldata),numknot)
+        d   =fltarr(n_elements(xdata) + n_elements(ldata),numknot)
+        ;;;----add by zeng 20100304-----
+        nbase=0
+        if cndata gt 0 then begin
+            wgt=[1.0/cydata_err, 1.0/ydata_err/norm(ydata_in_time_block), 1./ldata.data_err]
+            d = fltarr(n_elements(xdata) + n_elements(cxdata)+ n_elements(ldata),numknot)
+            dwgt=d
+            for l=0,cndata -1 do begin
+                d[l,*]=cdp[l,*]
+                dwgt[l,*]=d[l,*]*wgt[l]
+            endfor 
+            nbase=cndata
+        endif 
+        if endata gt 0 and cndata eq 0 then begin
+            wgt=[1.0/eydata_err, 1.0/ydata_err/norm(ydata_in_time_block), 1./ldata.data_err]
+            d = fltarr(n_elements(xdata) + n_elements(exdata)+ n_elements(ldata),numknot)
+            dwgt=d
+            for l=0,endata -1 do begin
+                d[l,*]=edp[l,*]
+                dwgt[l,*]=d[l,*]*wgt[l]
+            endfor 
+            nbase=endata
+        endif
+        for l=0,n_elements(ydata)-1 do begin
+            i= nbase + l
+            d(i,*) = dp(l,*)
+            dwgt(i,*) = d(i,*)*wgt(i)
+        endfor
+        for l =0, n_elements(ldata) - 1 do begin
+            i = n_elements(ydata) + nbase + l
+            d(i,*) = dline(l,*)
+            dwgt(i,*) = d(i,*) * wgt(i)              
+        endfor      
+        sub = [b # geeinvc,bline]
+        datatofit = [norm(ydata_in_time_block) * ydata,ldata.data - outint]
+        ;;;;---- add by zeng 20100315 ----
+        if cndata gt 0 then begin
+            sub= [cb# cgeeinvc, b # geeinvc,  bline]
+            datatofit = [cydata, norm(ydata_in_time_block) * ydata, ldata.data - outint]
+        endif 
+        if endata gt 0 and cndata eq 0 then begin
+            sub= [eb# egeeinvc, b # geeinvc,  bline]
+            datatofit = [eydata, norm(ydata_in_time_block) * ydata, ldata.data - outint]
+        endif 
+      end
+  'line': Begin
+        wgt = [ 1. / ldata.data_err]
+        dwgt=fltarr( n_elements(ldata),numknot)
+        d   =fltarr( n_elements(ldata),numknot)
+
+        for l =0, n_elements(ldata) - 1 do begin
+          i =  l
+          d(i,*) = dline(l,*)
+          dwgt(i,*) = d(i,*) * wgt(i)              
+ 	endfor
+
+        sub = [bline]
+        datatofit = [ldata.data - outint]
+      End
+else: Print, 'Linearfit: m.type not in case - ', m.type
+endcase
+
+if (bc(0) gt -1.e30) then mini=1 else mini=0
+if (bc(2) gt -1.e30) then maxi=numknot-2 else maxi=numknot-1
+
+
+ydatawgt=(datatofit - sub - d#fx)*wgt
+
+if (mini eq maxi) then begin
+  knotval = total(ydatawgt)/total(dwgt(*,mini))
+  goto, EVAL
+endif
+
+decom = transpose(dwgt(*,mini:maxi))#dwgt(*,mini:maxi)
+
+Catch, Error_status
+
+;Begin error handler
+If error_status NE 0 Then Begin
+
+ If  msg_printed LE 1 THEN BEGIN ; Print only once per event
+   Message, /Continue, 'Catch Error message:' + !err_string
+ ENDIF ; msg_printed
+ 
+
+ If ldebug Then Begin
+   Message, /Continue, 'Error Index from Catch =' + String(Error_status)
+
+   Help, Calls=calls
+   Message, /Continue, 'Called from:' + calls[1]
+   For i=0,N_elements(calls)-1 Do Begin
+     Print, '     ', calls[i]
+   Endfor
+   Help, decom, w, u, v
+   Print, 'Min(w) = ', Min(w)
+ Endif
+
+;Since svdc returned through Catch, make outputs into array of right size.
+ nel = N_Elements(decom[*,0])
+
+ w = Fltarr(nel)
+ u = Fltarr(nel,nel)
+ v = Fltarr(nel,nel)
+
+ Goto, After_SVDC
+
+EndIf
+
+
+svdc, decom, w, u, v   ; ,/double
+
+
+After_SVDC:
+
+Catch, /Cancel     ; Just catch for SVDC
+
+
+minw = min(w)
+If (minw Ne 0.0) Then Begin
+                              cn=max(w)/minw 
+                   EndIf Else Begin
+                              cn= 1.E7
+                              IF  msg_printed LE 1 THEN BEGIN ; Print only once per event
+                                Print, 'Linearfit: Error - min(w) = 0.0'
+                              ENDIF ; msg_printed
+		              
+                   EndElse
+
+if (cn gt 1.e6) then begin
+  msg_printed = msg_printed + 1
+  IF  msg_printed LE 1 THEN BEGIN    ; Print only once per event
+    print,'LINEARFIT:  Warning:  SVDC gives ill-conditioned matrix'
+  ENDIF   ; msg_printed
+
+  If ((msg_printed Mod 10000) Eq 0) Then Print, 'Linearfit: # of errors = ', msg_printed
+
+  maxw = max(w)
+  nels = N_Elements(w)
+
+  For i=0,nels-1 Do Begin
+    If (w(i) Ne 0) Then Begin
+       If (maxw/w(i) Gt 1.E6) Then w(i) = 0.0
+    EndIf Else Begin
+       w(i) = 0.    
+       msg_printed = msg_printed + 1 
+       If (msg_printed Mod 10000 Eq 0) Then Print, 'Linearfit: # of errors = ', msg_printed
+    EndElse    ;  w(i)
+  EndFor
+
+endif
+
+knotval = svsol(u,w,v,transpose(dwgt(*,mini:maxi))#ydatawgt)
+
+EVAL:
+
+if (mini eq 1)         then knotval=[bc(0),temporary(knotval)]
+if (maxi eq numknot-2) then knotval=[temporary(knotval),bc(2)]
+
+ydatafit= d # knotval  +   sub
+
+chisq=total(((datatofit-ydatafit)*wgt)^2.)
+
+;if n_tags(corerefldata) gt 0 then stop
+
+return, (chisq + chisout)
+end
+
+
+

@@ -1,0 +1,61 @@
+; This is the calibration file for the 2G FIDA system
+; CERVIEW chords f03,f04.
+; This file contains the patch panel used for a given
+; shot or shot range.
+; The patch panel number is a map to the major radius
+; of the measurement and the intensity calibration
+; file to use.  This will determine which patch file
+; patch1.txt, patch2.txt, etc... will be opened.
+;
+; Search the summaries for "2G s-FIDA"
+;
+; Notes:
+; I have looked at shots starting at 148702 (148699-148734)
+; and scrolled through the summaries until I see 2G on
+; something other than PATCH9.
+; 149894-149995 has fiber c6c not connected.
+; 149941 says f03 from 201, 218, 184
+;             f04 from 209, 227, 192
+; 150088-150107 says f03 from 201, 218, 184
+;                    f04 from 209, 227, 192
+; 150108-150126 says f03 from 201, 218, 184
+;                    f04 from 209, 227, 192
+;;;these numbers above are from 2point fittings.
+;;;now the patch files are updated with more correct 3pt fittings--xc 
+; For many shots the log says
+; P5,7,9,11,1,3 (which is PATCH9) but does
+; not call out 'PATCH9'
+; Get patch panel for this shot
+; wh = WHERE(shot_start LE LONG(shot) AND shot_end GE LONG(shot),nwh)
+; shot_start shot_end patch
+;------------------------------------------------
+;       144017 ?
+144018 145203 9
+146527 146551 9
+147110 147145 8
+147167 147180 9
+147574 147603 8
+148702 150397 9
+150398 150530 8
+150547 150667 7
+150709 150812 9
+150813 150856 7
+150857 156346 9
+156347 157415 12
+157416 157513 10
+157514 157537 12
+157538 157643 10
+157644 157684 12
+157685 157719 11
+157720 157730 12
+157731 157731 10
+157732 157733 11
+157734 157753 12
+157754 157962 10
+157963 159235 12
+159236 159250 11
+159251 159260 10
+159261 161019 12
+161020 162176 10
+162177 999999 13
+; LAST LINE

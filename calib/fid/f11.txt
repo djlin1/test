@@ -1,0 +1,10 @@
+; This is the calibration file for the 2G FIDA system
+; CERVIEW chord f11
+; This file contains the fiducial in nm for the edge
+; of the spectrum, such that the wavelength is
+;   lambda = pixel*s + b
+; where s is the dispersion and b is the fiducial.
+; shot_start shot_end fiducial
+;------------------------------------------------
+162177 999999 648.586
+; LAST LINE

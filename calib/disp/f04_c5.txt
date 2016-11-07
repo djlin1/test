@@ -1,0 +1,21 @@
+; This is the calibration file for the 2G FIDA system
+; CERVIEW chord f04, third spectrum from the LHS of the
+; spectral data denoted channel 5
+; This file contains the dispersion in nm/pix,
+; such that the wavelength is
+;   lambda = pixel*s + b
+; where s is the dispersion and b is the fiducial.
+;10192009 shots: 139469 - <141811
+;02022010 shots: 141811 - <143700
+;04212011 shots: 143700 - <148650
+;02142010 shots: 148650 - current
+;
+; shot_start shot_end disp
+;------------------------------------------------
+139469 141811 0.0191784
+141811 143700 0.0190937
+143701 148650 0.0188598
+148650 156346 0.0189868
+156347 162176 0.0188964
+162177 999999 0.0200067
+; LAST LINE

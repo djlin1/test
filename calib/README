@@ -1,0 +1,91 @@
+README for FIDA calibration information.
+As of this date
+20130130
+this is teh directory for the FIDA calibration data
+for the "2G" FIDA system, that is the "oblique" system
+installed by Chris Muscatello.
+
+The first set of wavelength calibration numbers are for 
+date 10/19/2009, which is the last startup day for this
+run campaign.
+139469 on 10/19/2009.
+The calibration data indicates that there are valid numbers
+for date 10/19/2009.
+Thus the numbers are assumed to be valid for shots during
+this run campaign has shot numbers
+139469 (10/19/2009) - 142928 (4/30/2010)
+from the last day of startup to the post-run beam-into-gas.
+However, the next set of claibrations begin on
+2/2/2010.  The closest shot number is 141811 on 2/26/2010.
+
+Muscatello's apply_intens_calib.pro indicates that for shot
+numbers less than 143161 that the calibration directory is
+'back2010b', with sub-directories PATCH1-PATCH4 with a 
+calibration file for each channel.
+
+The second set of calibration numbers begin on 2/2/2010.
+This would be shots 141811 and beyond.  However there is not
+another intensity calibration for this shot range, so we
+will use the calibration from 'back2010b'
+
+The next set of calibration numbers are from 4/21/2011.
+This would be after the LTO-II which begins with plasma shots
+146907 on 10/17/2011.
+
+The next set of calibration numbers are from 2/14/2012.
+The closest relevant plasma shot is 148650.
+
+~~ Summary ~~
+
+** calibration numbers for pixel, disp, fid. **
+10192009 shots: 139469 - <141811
+02022010 shots: 141811 - <143700
+04212011 shots: 143701 - <148650
+02142012 shots: 148650 - current
+
+** intensity calibration spectra **
+shots: 139469 - <143161 (back2010b)
+shots: 143161 - <143700 (forward2010)
+shots: 143701 - current (back2011)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+Patch panel information.
+For years 2009-2010 there were a number of patch panels settings.
+Eatch patch panel setting has a corresponding intensity
+calibration and major radius of measurement.
+For example, intensity calib from back2010b has four directories
+PATCH1, 2, 3, 4
+each with a calibration for channels 1-6.
+
+The patch panel settings can be obtained from summary search for
+FIDA and scroll down to the diagnostics log.
+For example you will see
+************ 1G FIDA **********
+-f01-  -f02-
+Chord  Chord
+V1     V2
+************ 2G FIDA **********
+-f03-          -f04-
+Channel Chord  Channel Chord
+2       P6     1       P1
+4       P9     3       R2
+6       P5     5       P4
+
+where each channel maps to a fiber (chord) at a given radius.
+Lets use Xi Chen's documnetation for 143701-148701
+PATCH 9
+Radii are 191, 203, 214, 223, 170, 181.
+This does not correlate with anything I have so I need help.
+
+P1 here means fibers 1,2,3 that are arranged vertically all
+go to channel 1 and collect light from essentially one
+major radius.
+
+Therefore there are 33 total fibers giving 11 possible radii
+for the measurement.
+
+For example:
+
+05152012	148702 	1G (f01-v01) (f02-v02)
+			2G PATCH 9.

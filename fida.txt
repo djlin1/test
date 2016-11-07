@@ -1,0 +1,130 @@
+- about.txt
+calib
+	- disp
+		- ...
+	- fid
+		- ...
+	- idl
+	- intens
+		- ...
+	- patch
+		- ...
+	- pixrange
+		- ...
+	- README
+	- README~
+data
+	- bag_spred_get_data.pro
+	- beam_get_fractions.pro
+	- cal_3g.pro
+	cer
+		- get_cer_data.pro
+		- get_cer_data.pro~
+		- read_abs_calib.pro
+		- read_abs_calib.pro~
+	- d3d_beams.pro
+	- gaprofiles_get_profiles.pro
+	- gaprofiles_valid.pro
+	- get_oblique_data.pro
+	- get_oblique_data.pro~
+	- get_profile.pro
+	- getrho.pro
+	mainion
+		- bst_analysis_big.pro
+		- bst_beam_name_parse.pro
+		- bst_cerfit_analysis_big.pro
+		- bst_cerfit_find_scripts.pro
+		- bst_cerfit_stark_output.pro
+		- bst_cerview.pro
+		- bst_chord_name_parse.pro
+		- bst_chord_param.pro
+		- bst_dispersion.pro
+		- bst_param_cerdata_path.pro
+		- bst_param_detector.pro
+		- bst_param_dispersion.pro
+		- bst_param_wavelength.pro
+		- dalpha_get_abs_calib.pro
+		- dalpha_get_cerfit_wavecal.pro
+		- dalpha_get_cerfit_wavecal.pro~
+		- dalpha_get_fiducial_offset.pro
+		- dalpha_get_fiducial_wavelength.pro
+		- dalpha_get_geomfac.pro
+		- dalpha_get_npixel.pro
+		- dalpha_get_radius.pro
+		- get_main_ion_data.pro
+		- get_main_ion_data.pro~
+		- label_data_format_read.pro
+		- mir_read_cerdata.pro
+	- nb_compare.pro
+	- neutralizer.pro
+	- pix_to_wavelength_3G.pro
+	- wavelength_to_energy.pro
+	- zipfit_get_profile_beam.pro
+gui
+	- fida_gui.pro
+	- fida_gui.pro~
+	- fplot.pro
+	- fplot.pro~
+	- fprofile.pro
+	- fprofile.pro~
+	- tssub2.pro
+	- tssub2.pro~
+idl
+	- build_array.pro
+	- build_structure.pro
+	- concat.pro
+	- default.pro
+	- default.pro~
+	- defined.pro
+	fit
+		- amoeba_4d.pro
+		- amotry.pro
+		- bag_spl_mod.pro
+		- bag_spl_mod.pro~
+		- design_matrix.pro
+		- fit_common.pro
+		- fit_profile.pro
+		- linearfit.pro
+		- linearfit.pro~
+		- rhosig.pro
+		- sigrho.pro
+		- spl_mod_common.pro
+	- guess_data_type.pro
+	- has_tag.pro
+	- info.pro
+	- is_null.pro
+	math
+		- cubic_root.pro
+		- dotp.pro
+		- magnitude.pro
+		- pi.pro
+		- quadratic_root.pro
+		- rotate_3d.pro
+		- sign.pro
+		- vector_angle.pro
+	- nrl_formulary.pro
+	plot
+		- bag_annotate.pro
+		- bag_cleanplot.pro
+		- bag_plot_setup.pro
+		- bag_tek_color.pro
+		- cclean.pro
+		- cleanplot.pro
+		- color.pro
+		- oploterr.pro
+	- setunion.pro
+	textoidl
+		- ...
+- start_gui.idl
+- start_gui.idl~
+tssub
+	- bag_tssub2_beam_name.pro
+	- contour_spectrum.pro
+	- get_elms_mdsplus.pro
+	- get_spectrum.pro
+	- read_tssub_file.pro
+	- read_tssub_file.pro~
+	- rm_spikes.pro
+	- run_tssub.pro
+	- run_tssub.pro~
+	- write_tssub_file.pro

@@ -1,0 +1,12 @@
+; This is the calibration file for the 3G FIDA system
+; CERVIEW chord f09
+; 
+; This file contains the dispersion in nm/pix,
+; such that the wavelength is
+;   lambda = pixel*s + b
+; where s is the dispersion and b is the fiducial.
+
+; shot_start shot_end disp
+;------------------------------------------------
+162177 999999  0.0408390
+; LAST LINE
